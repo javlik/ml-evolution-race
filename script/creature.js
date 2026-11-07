@@ -22,17 +22,7 @@ class Creature
 {
     constructor(space, position, category, creatureType)
     {
-		let initializer = 'glorotNormal';
-
-		this.brain = tf.tidy(() => {
-			return tf.sequential({
-				layers: [
-				tf.layers.dense({units: 5, activation: 'linear', inputShape: [5], kernelInitializer: initializer, biasInitializer: initializer}),
-				tf.layers.leakyReLU({units: 4, kernelInitializer: initializer, biasInitializer: initializer}),	
-				tf.layers.leakyReLU({units: 3, kernelInitializer: initializer, biasInitializer: initializer}),		
-				tf.layers.dense({units: 2, /*activation: 'linear',*/ kernelInitializer: initializer, biasInitializer: initializer})]
-			});
-		});
+		this.brain = new Brain();
 
         this.radius = 6;
 		this.sight_distance = 200;
@@ -146,16 +136,9 @@ class Creature
 		
 		let vel = vlength(this.body.getVel()) / 100;
 		
-        var model_output = tf.tidy(()=> {
-			if(self.sim.useTanhEdit.checked)
-				return tf.tanh(this.brain.predict(tf.tensor2d([eye_signals])));
-			else
-				return this.brain.predict(tf.tensor2d([eye_signals]));			
-			//return this.brain.predict(tf.tensor2d([eye_signals.concat([vel])]));
-		});
-		
-        var thrust_control = model_output.get(0,0);
-        var turn_control = model_output.get(0,1);
+		const output = this.brain.forward(eye_signals, self.sim.useTanhEdit.checked);
+		const thrust_control = output[0];
+		const turn_control = output[1];
 
         this.body.applyImpulse( vmult(this.shape.body.rot, 10 * thrust_control * self.sim.propulsionMultiplierEdit.value), cp.v(0, 0));
 
@@ -175,73 +158,16 @@ class Creature
     clone() {
 		var new_creature = new Creature(this.space, this.initPosition, this.category);
 		new_creature.creatureType = CreatureType.clone;
-
-		for(var i = 0; i < this.brain.layers.length; ++i) {
-
-			if(this.brain.layers[i].getWeights().length == 0) continue;
-
-			var weights = this.brain.layers[i].getWeights()[0].dataSync();
-			var new_weights = new_creature.brain.layers[i].getWeights()[0].dataSync();
-			for(var j = 0; j < weights.length; ++j) {
-				new_weights[j] = weights[j];
-			}
-
-			var bias = this.brain.layers[i].getWeights()[1].dataSync();
-			var new_bias = new_creature.brain.layers[i].getWeights()[1].dataSync();
-			for(var j = 0; j < bias.length; ++j) {
-				new_bias[j] = bias[j];
-			}
-		}
-
+		new_creature.brain = this.brain.clone();
 		return new_creature;
     }
 	
 	crossover(other) {
-		for(var i = 0; i < this.brain.layers.length; ++i) {
-
-			if(this.brain.layers[i].getWeights().length == 0) continue;
-
-			// Weights
-			var weights = this.brain.layers[i].getWeights()[0].dataSync();
-			var other_weights = other.brain.layers[i].getWeights()[0].dataSync();
-			var mid = weights.length / 2;
-			for(var j = mid; j < weights.length; ++j) {
-				weights[j] = other_weights[j];
-			}
-
-			// Bias
-			var bias = this.brain.layers[i].getWeights()[1].dataSync();
-			var other_bias = other.brain.layers[i].getWeights()[1].dataSync();
-			mid = bias.length / 2;
-			for(var j = mid; j < bias.length; ++j) {
-				bias[j] = other_bias[j];
-			}
-		}
+		this.brain.crossover(other.brain);
     }
 
     mutate(mutationProbability, mutationChange) {
-		for(let i = 0; i < this.brain.layers.length; ++i) {
-
-			if(this.brain.layers[i].getWeights().length == 0) continue;
-
-			var weights = this.brain.layers[i].getWeights()[0].dataSync();
-			for(let j = 0; j < weights.length; ++j) {
-				if(Math.random() < mutationProbability) {
-					weights[j] += Math.random() * mutationChange - (mutationChange / 2.0);
-					// if(weights[j] > 1.3) weights[j] = 1.3;
-					// if(weights[j] < -1.3) weights[j] = -1.3;
-				}
-			}
-
-			var bias = this.brain.layers[i].getWeights()[1].dataSync();
-			for(let j = 0; j < bias.length; ++j) {
-				if(Math.random() < BIAS_MUTATION_PROBABILITY) {
-					bias[j] += Math.random() * BIAS_MUTATION_CHANGE - (BIAS_MUTATION_CHANGE / 2.0);
-					// if(bias[j] > 1.3) bias[j] = 1.3;
-					// if(bias[j] < -1.3) bias[j] = -1.3;
-				}
-			}
-		}
+		this.brain.mutate(mutationProbability, mutationChange, BIAS_MUTATION_PROBABILITY, BIAS_MUTATION_CHANGE);
 		return this;
     }
 
